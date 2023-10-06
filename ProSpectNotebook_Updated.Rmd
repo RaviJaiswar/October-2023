@@ -1,0 +1,270 @@
+```{r}
+library(ProSpect)
+library(foreach)
+library(data.table)
+library(Highlander)
+library(magicaxis)
+library(celestial)
+```
+
+
+```{r}
+MY_filter_names = c("WFI_U38","U","B","IA484","IA527","WFI_V","IA574","V","IA598","IA624","R","WFI_Rc","IA651","IA679","IA738","IA767","I","IA797","F814W","IA856","Z","F098M","J1","F105W","J2","NB118","F125W","J3","F140W","F160W","Hs","Hl","NB209","Ks","tenisK","KsHl",
+"IRAC_36","IRAC_45","IRAC_58","IRAC_80")
+
+
+#setwd with ctrl shift H - /notebook/Test Folder
+#filters = fread('TABLE with list of filters in order.csv') #Montague.csv ##Megatron.csv #Megatron_forR.csv surely
+filters=fread('Megatron_forR.csv')
+#OutputDir = 'LOCATION where the .dat files are' #I just set the wd with ctrl shift h. They're #now .csv files 
+OutputDir='R-Stuff/ProSpect_Filters'
+#change back to setwd("~/notebook") if you changed to prospect_filters
+## getting filter response curves
+filtout = foreach(ii = 1:nrow(filters))%do%{
+  filtername = filters[ii,]$Name #swap name for whatver your column is called with the filter names 
+  
+  filt = read.csv(paste0('~/R-Stuff/ProSpect_Filters/',filtername, '.csv')) ## this should be two columns, first being wavelength in Ang, second being response
+  return(approxfun(filt))
+}
+
+## getting central wavelengths
+cenwave = foreach(ii = 1:nrow(filters), .combine = 'c')%do%{
+  filtername = filters[ii,]$Name #swap name for whatver your column is called with the filter names 
+  
+  filt = read.csv(paste0('~/R-Stuff/ProSpect_Filters/',filtername, '.csv')) 
+  return(cenwavefunc(filt))
+}
+
+
+```
+
+
+```{r}
+#Comb = your big table full of galaxy IDs, fluxes and flux errors (in Jy)
+Comb = fread('ProSpect-Final_Sample.csv',sep=',')
+#Change UID & column names here to match whatever its called in your catalogue 
+getinfo=function(CAT=574689){
+  ## grabbing out your galaxy ID and all the flux columns and then flux_err colums 
+  ## swap these to be the right names but keep them in wavelength order 
+  
+  out=Comb[id==CAT,list(id,WFI_U38,U,B,IA484,IA527,WFI_V,IA574,V,IA598,IA624,R,WFI_Rc,IA651,IA679,IA738,IA767,I,
+IA797,F814W,IA856,Z,F098M,J1,F105W,J2,NB118,F125W,J3,F140W,F160W,Hs,Hl,NB209,Ks,tenisK,KsHI,
+IRAC_36,IRAC_45,IRAC_58,IRAC_80,WFI_U38_err,U_err,B_err,IA484_err,IA527_err,WFI_V_err,IA574_err,V_err,IA598_err,IA624_err,R_err,WFI_Rc_err,IA651_err,IA679_err,IA738_err,IA767_err,I_err,
+IA797_err,F814W_err,IA856_err,Z_err,F098M_err,J1_err,F105W_err,J2_err,NB118_err,F125W_err,J3_err,F140W_err,F160W_err,Hs_err,Hl_err,NB209_err,Ks_err,tenisK_err,KsHI_err,
+IRAC_36_err,IRAC_45_err,IRAC_58_err,IRAC_80_err)]
+  ## splitting out all your fluxes
+  flux=out[,list(WFI_U38,U,B,IA484,IA527,WFI_V,IA574,V,IA598,IA624,R,WFI_Rc,IA651,IA679,IA738,IA767,I,
+IA797,F814W,IA856,Z,F098M,J1,F105W,J2,NB118,F125W,J3,F140W,F160W,Hs,Hl,NB209,Ks,tenisK,KsHI,
+IRAC_36,IRAC_45,IRAC_58,IRAC_80)]
+  ## and flux errors 
+  fluxerr=out[,list(WFI_U38_err,U_err,B_err,IA484_err,IA527_err,WFI_V_err,IA574_err,V_err,IA598_err,IA624_err,R_err,WFI_Rc_err,IA651_err,IA679_err,IA738_err,IA767_err,I_err,
+IA797_err,F814W_err,IA856_err,Z_err,F098M_err,J1_err,F105W_err,J2_err,NB118_err,F125W_err,J3_err,F140W_err,F160W_err,Hs_err,Hl_err,NB209_err,Ks_err,tenisK_err,KsHI_err,
+IRAC_36_err,IRAC_45_err,IRAC_58_err,IRAC_80_err)]
+  ## putting them into two columns 
+  flux=cbind(flux=as.numeric(flux),fluxerr=as.numeric(fluxerr))
+
+  ## ADDING A 10% ERROR FLOOR TO EACH BAND'S ERROR -- Optional
+  #floor = rep(0.1, 22)
+  #for(ii in 1:length(fluxerr)){
+    #fluxerr[[ii]]=sqrt(fluxerr[[ii]]^2+(flux[,'flux'][[ii]]*floor[ii])^2)
+  #}
+  
+  flux=cbind(flux=as.numeric(flux[,'flux']),fluxerr=as.numeric(fluxerr))
+  
+  ## SETTING NEGATIVE FLUXES TO ZERO
+  flux[flux<0]=0
+  
+  ## adding columns with your filter names and central wavelengths 
+  data_table = data.table(filters, cenwave)
+  flux=cbind(data_table, flux)
+  return(list(Lv01=out,flux=flux))
+}
+```
+
+
+```{r}
+
+#shh = foreach(ii = 1:nrow(Comb))%do%{
+shh = foreach(ii = 1:1)%do%{
+  GalID = Comb$id[ii]
+  redshift=Comb[id == GalID,]$redshift
+  
+  agemax = 13.3e9-cosdistTravelTime(z=redshift, ref = '737')
+  LumDist_Mpc = cosdistLumDist(z=redshift, ref = '737') ## this just speeds up the calculations 
+  Data=list(flux= getinfo(GalID)$flux,
+            arglist=list(z=redshift, 
+                         emission =TRUE,
+                         massfunc=massfunc_snorm_trunc, ### use this to change SFH parameterisations -- use ?massfunc to see some of the inbuilt options 
+                         agemax=agemax, 
+                         Zagemax = (agemax/1e9),
+                         magemax=(agemax/1e9), 
+                         Z=Zfunc_massmap_lin, ### THIS CHANGES THE METALLICITY HISTORY 
+                         LumDist_Mpc=LumDist_Mpc),
+            speclib=BC03lr, 
+            Dale=Dale_NormTot, 
+            filtout=filtout, 
+            Dale_M2L_func=Dale_M2L_func, # required to get monitored dust masses
+            SFH=SFHfunc, 
+            parm.names=c('mSFR','mpeak','mperiod','mskew','tau_birth','tau_screen', 'alpha_SF_birth','alpha_SF_screen', 'Zfinal'), # which parameters to fit for
+            mon.names=c("LP","masstot","dustmass.birth", "dustmass.screen", "dustmass.total", "dustlum.birth", "dustlum.screen", "dustlum.total", "SFRburst"),# paste("flux.",filters,sep='')),  # some of the things you may wish to monitor in each step of the chain
+            logged=c(T,F,T,F,T,T,F,F,T), # fit parameters in logged or linear space
+            intervals=list(lo=c(-4,-2,-1,-0.5,-2.5,-2.5,0,0,-4), 
+                           hi=c(5,3,1,1,1.5,1,4,4,-1.3)), # fitting range for parameters
+            fit = 'LD', # specifies the way in which the SED should be fitted ('LD', 'optim', 'CMA', or 'check')
+            N=length(MY_filter_names), # number of observed filters
+            like='st', # Using a student-t likelihood
+            verbose=FALSE 
+    )
+  
+  
+  
+  
+  startpoint = (Data$intervals$lo+Data$intervals$hi)/2
+  seed=1
+  testHigh = Highlander(startpoint, Data, ProSpectSEDlike, Niters=c(200,200), NfinalMCMC = 200, lower = Data$intervals$lo, upper=Data$intervals$hi, seed=seed, optim_iters = 2, likefunctype = 'LD' )
+  
+  Data$fit = 'check'
+  bestfit=ProSpectSEDlike(testHigh$par, Data=Data)
+
+  pdf(file = paste0(GalID, '.pdf' ), width = 11, height = 8)
+  plot(bestfit)
+  dev.off()
+  
+  
+  ## removing some things to make the outputs smaller
+  bestfit$SEDout$StarsAtten = NULL
+  bestfit$SEDout$StarsUnAtten = NULL
+  #bestfit$SEDout$DustEmit = NULL
+  #bestfit$SEDout$Stars$wave_lum = NULL
+  #bestfit$SEDout$Stars$lum_unatten = NULL
+  #bestfit$SEDout$Stars$lum_atten = NULL
+  bestfit$SEDout$Stars$lumtot_unatten = NULL
+  bestfit$SEDout$Stars$lumtot_atten = NULL
+  bestfit$SEDout$Stars$lumtot_birth = NULL
+  bestfit$SEDout$Stars$lumtot_screen = NULL
+  
+  bestfit$Data$AGN = NULL
+  
+  bestfit$Data$Dale = NULL
+  bestfit$Data$speclib = NULL
+  
+  testHigh$LD_last$Call = NULL
+  testHigh$LD_last$Model = NULL
+  
+  
+  Data$speclib = NULL
+  Data$Dale = NULL
+  Data$AGN = NULL
+  
+  print('making output')
+  output = list(Data = Data, Highlander_output = testHigh, 
+                ProSpectSEDlike_Output = bestfit
+  )
+    
+  print('saving outputs')
+  saveRDS(output, file = paste0(GalID, '.rds'))
+  print('start check')
+  SEDdata = list(bestfit_x=bestfit$SEDout$FinalFlux[,1], bestfit_y=bestfit$SEDout$FinalFlux[,2])
+  print(SEDdata)
+  SEDbanddata = list(data_x=Data$flux$cenwave, data_y=Data$flux$flux, data_y_err=Data$flux$fluxerr)
+  print(SEDbanddata)
+  SEDbandmodel = list(bestfit_data_x=Data$flux$cenwave, bestfit_data_y=bestfit$SEDout$Photom)
+  print(SEDbandmodel)
+     
+  print(OutputDir)
+  write.table(SEDdata, file=paste(GalID,'_SED_bestfit.txt', sep=''), row.names=FALSE,   col.names=TRUE)
+  print('test1')
+  write.table(SEDbanddata, file=paste(GalID,'_SED_bands_data.txt', sep=''), row.names=FALSE, col.names=TRUE)
+  print('test2')
+  write.table(SEDbandmodel, file=paste(GalID,'_SED_bands_bestfit.txt', sep=''), row.names=FALSE, col.names=TRUE)
+  print('done!')
+
+}
+
+```
+
+
+
+### Processing the outputs
+```{r}
+OutputDir = '~/R-Stuff/'
+myFiles <- list.files(path= OutputDir, pattern="*.rds")
+
+i = 1
+file_name = myFiles[i]
+filename = paste0(OutputDir,file_name)
+GalStuff = readRDS(filename)
+GalID = as.character(sapply(strsplit(file_name, "\\."), "[[", 1))
+
+.c_to_mps = 299792458
+.lsol_to_erg= 3.828e33
+.mpc_to_cm = 3.08568e+24
+.lsol_to_absolute = .lsol_to_erg/(4*pi*(.mpc_to_cm*1e-5)^2)
+
+
+#### Highlander Best Fit Outputs ####
+
+Sample = foreach(i=1:length(myFiles), .combine='rbind') %dopar% {
+
+    file_name = myFiles[i]
+    filename = paste0(OutputDir,file_name)
+    GalStuff = readRDS(filename)
+    GalID = as.character(sapply(strsplit(file_name, "\\."), "[[", 1))
+    
+    ## calculating how many free parameters you used
+    nparm = length(GalStuff$Highlander_output$parm)
+    
+    
+    Redshift = GalStuff$Data$arglist$z
+    LookbackTime = cosdistTravelTime(Redshift, ref = 'Planck15')*1e9
+    agemax = 13.38e9 - LookbackTime
+    
+    
+    ## sorting the final MCMC posterior by likelihood
+    post = cbind(GalStuff$Highlander_output$LD_last$Posterior1, GalStuff$Highlander_output$LD_last$Monitor)
+    post = data.table(post)
+    post = post[order(-LP_mon),]
+    
+    ## taking the top ~1sigma of the posterior by likelihood 
+    chisq_cut = max(post$LP_mon) - qchisq(0.68, nparm)/2
+      toppost = post[post$LP_mon > chisq_cut,]
+      toppost[,LP_mon:=NULL]
+      
+      ## the values used to derive galaxy properties come from the best fitting iteration in the final MCMC (this often differs from the best fitting iteration from Highland )
+      values = as.numeric(post[1,1:nparm])
+      
+      ## Using SMstarfunc to calculate stellar mass remaining 
+      BinMasses=SMstarfunc(massfunc = massfunc_snorm_trunc,
+                           mSFR=10^(values[1]),
+                           mpeak=(values[2]),
+                           mperiod=10^(values[3]),
+                           mskew=( values[4]),
+                           Zfinal = 10^(values[9]),
+                           magemax = agemax/1e9,
+                           agemax = agemax,
+                           Z= Zfunc_massmap_lin, #yield=Data$arglist$yield,
+                           z = Redshift,
+                           ref = 'Planck15')
+      
+      ## working out what the ratio of remaining/total stellar mass is to calculate the errors on stellar mass (not the best way to do it, but computationally very quick)
+      ratio = as.numeric(BinMasses['TotSMstar']/toppost[1,'masstot'])
+      masstotloc = which(colnames(toppost) ==  'masstot')
+      rangeofvals = foreach(ii = 1:ncol(toppost), .combine = 'rbind')%do%{range(toppost[,..ii])}
+      ## calculating an upper and lower limit for the stellar mass
+      TotSMstarlimits = rangeofvals[which(colnames(toppost) == 'masstot'),] * ratio
+      
+    
+   output = c(GalID, Redshift, toppost[1,], BinMasses['TotSMstar'], rangeofvals[,1], TotSMstarlimits[1], rangeofvals[,2], TotSMstarlimits[2])
+    output = unlist(output)
+      
+    return(output)
+}
+
+Sample = data.table(Sample)
+parm.names = GalStuff$Data$parm.names
+
+mon.names=GalStuff$Data$mon.names
+names(Sample) = c('id', 'z', parm.names, mon.names, 'StellarMass', paste0(c(parm.names,mon.names,'StellarMass'), '_LB'), 
+                paste0(c(parm.names,mon.names,'StellarMass'), '_UB'))
+
+```
